@@ -32,3 +32,43 @@ resource "aws_security_group" "app" {
     Project = var.project_name
   }
 }
+# EC2 IAM role for Systems Manager
+resource "aws_iam_role" "ec2" {
+  name        = "CloudOperationsPlatformEC2Role"
+  description = "EC2 role for Cloud Operations Platform Systems Manager access"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = {
+    Name    = "CloudOperationsPlatformEC2Role"
+    Project = var.project_name
+  }
+}
+
+# Existing AWS-managed SSM permissions
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# EC2 instance profile
+resource "aws_iam_instance_profile" "ec2" {
+  name = "CloudOperationsPlatformEC2Profile"
+  role = aws_iam_role.ec2.name
+
+  tags = {
+    Name    = "CloudOperationsPlatformEC2Profile"
+    Project = var.project_name
+  }
+}
