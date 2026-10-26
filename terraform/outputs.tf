@@ -12,3 +12,13 @@ output "security_group_id" {
   description = "Application security group"
   value       = aws_security_group.app.id
 }
+
+output "ecr_repository_name" {
+  description = "Private ECR repository name"
+  value       = aws_ecr_repository.app.name
+}
+
+output "ecr_repository_url" {
+  description = "Private ECR repository URL"
+  value       = aws_ecr_repository.app.repository_url
+}

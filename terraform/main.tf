@@ -72,3 +72,53 @@ resource "aws_iam_instance_profile" "ec2" {
     Project = var.project_name
   }
 }
+
+# Private Amazon ECR repository for application images
+resource "aws_ecr_repository" "app" {
+  name                 = var.project_name
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = {
+    Name    = "${var.project_name}-ecr"
+    Project = var.project_name
+  }
+}
+
+# Allow the EC2 instance to pull images from this repository
+resource "aws_iam_role_policy" "ecr_pull" {
+  name = "${var.project_name}-ecr-pull"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Sid    = "ECRAuthorization"
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "PullApplicationImages"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = aws_ecr_repository.app.arn
+      }
+    ]
+  })
+}
