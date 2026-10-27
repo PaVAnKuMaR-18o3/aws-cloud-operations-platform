@@ -1,7 +1,34 @@
 node_modules
-npm-debug.log
+npm-debug.log*
+
 Dockerfile
 .dockerignore
+docker-compose.yml
+
 .git
 .gitignore
-docker-compose.yml
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+.aws
+**/credentials
+
+# Terraform local files
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+tfplan-*
+crash.log
+crash.*.log
+
+# Local backups
+*.tf.bak
+*.tf.pre-*
+*.before-audit-fix
+
+# Local operating system files
+.DS_Store
