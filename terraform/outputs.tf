@@ -22,3 +22,18 @@ output "ecr_repository_url" {
   description = "Private ECR repository URL"
   value       = aws_ecr_repository.app.repository_url
 }
+
+output "instance_id" {
+  description = "Application EC2 instance ID"
+  value       = aws_instance.app.id
+}
+
+output "instance_public_ip" {
+  description = "Application EC2 public IP"
+  value       = aws_instance.app.public_ip
+}
+
+output "application_url" {
+  description = "Application HTTP URL"
+  value       = "http://${aws_instance.app.public_ip}"
+}

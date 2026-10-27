@@ -55,17 +55,15 @@ build/Release
 # https://www.npmjs.org/doc/misc/npm-faq.html#should-i-check-my-node_modules-folder-into-git
 node_modules
 # Terraform
-**/.terraform/*
-*.tfstate
-*.tfstate.*
-crash.log
-crash.*.log
-*.tfplan
-
-# Terraform
 **/.terraform/
 *.tfstate
 *.tfstate.*
+*.tfplan
+tfplan
+tfplan-*
 crash.log
 crash.*.log
-*.tfplan
+
+# Local Terraform backups
+*.tf.bak
+*.tf.pre-*
