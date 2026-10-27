@@ -1,0 +1,67 @@
+name: Docker Build and Runtime Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  docker-runtime:
+    name: Docker Build and Health Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t cloud-operations-platform:ci-test .
+
+      - name: Start container and validate health
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CONTAINER="cop-ci-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          PORT=13000
+
+          cleanup() {
+            docker logs "$CONTAINER" 2>&1 || true
+            docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run -d \
+            --name "$CONTAINER" \
+            -p "127.0.0.1:${PORT}:3000" \
+            cloud-operations-platform:ci-test
+
+          echo "Waiting for application health endpoint..."
+
+          for attempt in $(seq 1 30); do
+            if ! docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -qx true; then
+              echo "Container stopped unexpectedly."
+              docker logs "$CONTAINER" || true
+              exit 1
+            fi
+
+            if curl --fail --silent --show-error \
+              --max-time 2 \
+              "http://127.0.0.1:${PORT}/health"; then
+              echo
+              echo "Docker runtime health check PASSED."
+              exit 0
+            fi
+
+            echo "Attempt ${attempt}/30: health endpoint not ready."
+            sleep 2
+          done
+
+          echo "Health check timed out."
+          docker logs "$CONTAINER" || true
+          exit 1
