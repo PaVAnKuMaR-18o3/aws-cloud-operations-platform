@@ -1,160 +1,175 @@
 # AWS Cloud Operations Platform
 
-A containerised Node.js application deployed on AWS using Terraform, Amazon ECR, Amazon EC2, AWS Systems Manager, and Amazon CloudWatch.
+**AWS | Terraform | Docker | EC2 | ECR | GitHub Actions | CloudWatch | Linux**
 
-This project demonstrates practical cloud engineering skills including infrastructure as code, containerisation, application deployment, monitoring, IAM permissions, and CI automation.
+A hands-on cloud engineering project focused on deploying, validating, monitoring, and troubleshooting a containerised Node.js application on AWS.
+
+The project demonstrates infrastructure as code, container operations, AWS administration, automated testing, release validation, application monitoring, and performance measurement.
+
+**[GitHub Repository](https://github.com/PaVAnKuMaR-18o3/aws-cloud-operations-platform)**
+
+---
+
+## Project Highlights
+
+- **AWS deployment:** Deployed a containerised Node.js application on Amazon EC2 using an Amazon ECR image.
+- **Infrastructure as Code:** Used Terraform to define AWS infrastructure.
+- **Container operations:** Built, retrieved, ran, inspected, and validated Docker images and containers.
+- **Automated CI:** Implemented GitHub Actions workflows for tests, dependency auditing, and Docker runtime validation.
+- **Release validation:** Tested a candidate image in an isolated container while preserving the existing production deployment.
+- **Monitoring:** Integrated CloudWatch Logs and used AWS Systems Manager Session Manager for instance administration.
+- **Performance testing:** Executed synthetic HTTP tests, including a 2,500-request concurrent burst with 100% successful responses in one test.
 
 ## Architecture
 
-Developer → GitHub → Docker image → Amazon ECR → Amazon EC2 → Node.js application
+```text
+              Developer
+                  |
+                  v
+              GitHub
+                  |
+          GitHub Actions
+          /      |       \
+       Tests   Audit    Docker
+                         Build
+                  |
+             Amazon ECR
+                  |
+                  v
+              Amazon EC2
+                  |
+             Docker Runtime
+                  |
+            Node.js / Express
+                  |
+             Application
+                  |
+          +-------+--------+
+          |                |
+          v                v
+    CloudWatch Logs    Health Endpoint
 
-Operational monitoring:
-- AWS Systems Manager for instance management
-- Amazon CloudWatch Logs for application logs
-- EC2 status checks and application health endpoint
-- GitHub Actions for automated tests and dependency auditing
+    Operations:
+    AWS Systems Manager
+```
+
+**Release validation:** A separate candidate container is used for validation, with loopback-only port exposure and health checks before any production promotion decision.
+
+---
 
 ## Technology Stack
 
-- AWS EC2
-- Amazon ECR
-- AWS Systems Manager (SSM)
-- Amazon CloudWatch Logs
-- Terraform
-- Docker
-- Node.js and Express
-- Git and GitHub
-- GitHub Actions
-- npm audit
-
-## Key Features
-
-- Infrastructure provisioned with Terraform
-- Dockerised Node.js application
-- Container image stored in Amazon ECR
-- EC2 deployment using a pinned container image digest
-- IAM instance role and instance profile
-- Systems Manager access without requiring inbound SSH
-- IMDSv2 required for the EC2 instance
-- Encrypted gp3 EBS root volume
-- CloudWatch application logging with 14-day retention
-- Application health endpoint
-- GitHub Actions automated test workflow
-- Production dependency vulnerability auditing
-- ECR image scanning on push
-
-## Project Structure
-
-```text
-.
-├── .github/
-│   └── workflows/
-│       ├── test.yml
-│       └── dependencyScan.yml
-├── terraform/
-│   ├── main.tf
-│   ├── outputs.tf
-│   ├── variables.tf
-│   ├── versions.tf
-│   └── .terraform.lock.hcl
-├── app/
-├── app.js
-├── Dockerfile
-├── docker-compose.yml
-├── package.json
-├── package-lock.json
-├── tests/
-├── .dockerignore
-└── readme.md
-```
-
-## Application Endpoints
-
-| Endpoint | Purpose |
+| Category | Technologies |
 |---|---|
-| `/` | Application homepage |
-| `/health` | Application health check |
+| Cloud | AWS EC2, Amazon ECR, CloudWatch, Systems Manager |
+| Infrastructure as Code | Terraform |
+| Containers | Docker, Docker Compose |
+| Application | Node.js, Express, EJS |
+| CI | GitHub Actions |
+| Testing | Jest, Supertest, curl |
+| Security | IAM, IMDSv2, npm audit |
+| Operations | Linux, AWS CLI, Docker CLI |
+| Version Control | Git, GitHub |
 
-Example:
+---
 
-```bash
-curl http://YOUR_PUBLIC_IP/health
-```
+## Engineering Work
 
-Expected response: a healthy JSON response from the application.
+### 1. AWS Infrastructure and Operations
 
-## Infrastructure and Deployment
+Provisioned and operated cloud infrastructure for hosting a containerised application.
 
-The AWS infrastructure is defined in the `terraform/` directory.
+- Defined infrastructure using Terraform.
+- Configured EC2 instance access through an IAM role and instance profile.
+- Used AWS Systems Manager Session Manager for remote administration without requiring inbound SSH.
+- Configured Amazon ECR for container image storage and retrieval.
+- Integrated CloudWatch Logs for application log collection.
+- Used EC2 and application health checks for operational verification.
+- Worked with security groups, instance networking, and encrypted EBS storage.
 
-The deployment uses:
-- An EC2 instance running Amazon Linux
-- An EC2 IAM role with Systems Manager access
-- ECR permissions for retrieving the application image
-- A security group allowing HTTP access on port 80
-- CloudWatch Logs for application output
+### 2. Containerisation and Deployment
 
-The application container listens on port 3000 internally, with host port 80 mapped to container port 3000.
+- Packaged the Node.js application into a Docker image.
+- Used Amazon ECR as the container image registry.
+- Deployed the application to EC2.
+- Used a digest-pinned image reference for deterministic image selection.
+- Ran the application as a non-root container user.
+- Inspected container status, runtime configuration, logs, and resource consumption.
 
-The deployed application image is referenced by digest to provide deterministic image selection.
+### 3. CI Automation
 
-### Terraform
+Implemented three GitHub Actions workflows.
 
-Prerequisites:
-- AWS CLI
-- Terraform
-- Appropriate AWS credentials and permissions
+| Workflow | Purpose |
+|---|---|
+| Run Tests | Executes automated application tests |
+| Dependency Vulnerability Check | Audits production dependencies |
+| Docker Build and Runtime Validation | Builds the image and validates application health |
 
-From the project root:
+The Docker CI workflow builds a test image, launches an isolated container, checks its health endpoint, and cleans up the test container.
 
-```bash
-cd terraform
-terraform init
-terraform fmt -check -recursive
-terraform validate
-terraform plan
-```
+The dependency workflow runs:
 
-**Review the plan before making infrastructure changes.**
+`npm audit --omit=dev --audit-level=high`
 
-Do not apply changes blindly. Review replacements, downtime, public IP changes, and potential AWS costs.
+**Verification:** Successful GitHub Actions runs were observed for the test, dependency audit, Docker build, and runtime validation workflows.
 
-## Containerisation
+### 4. Candidate Release Validation
 
-The application uses Docker.
+Implemented an isolated candidate validation process.
 
-The Dockerfile:
-- Uses Node.js 24 Alpine
-- Installs production dependencies
-- Runs as a non-root application user
-- Exposes port 3000
+The validation workflow includes:
 
-Build and run locally:
+1. Checking the expected production baseline.
+2. Pulling the target image.
+3. Verifying candidate image identity.
+4. Starting a separate candidate container.
+5. Binding the candidate service to loopback on port `13002`.
+6. Running health checks.
+7. Cleaning up the candidate container after validation.
 
-```bash
-docker build -t cloud-operations-platform .
-docker run --rm -p 3000:3000 cloud-operations-platform
-```
+The existing production container was preserved during candidate testing.
 
-Test:
+This demonstrates release verification and operational caution rather than directly replacing a running service.
 
-```bash
-curl http://localhost:3000/health
-```
+---
 
-## CI and Dependency Security
+## Performance Testing
 
-GitHub Actions currently runs two workflows on pushes to `main` and pull request updates:
+Synthetic HTTP tests were conducted against the candidate application's local loopback health endpoint.
 
-1. **Run Tests**
-   - Installs project dependencies
-   - Executes the automated test suite
+### Concurrent burst benchmark
 
-2. **Dependency Vulnerability Check**
-   - Installs production dependencies
-   - Runs npm audit with a high-severity threshold
+| Metric | Observed result |
+|---|---:|
+| Requests | 2,500 |
+| Successful responses | 2,500 |
+| Failed requests | 0 |
+| Success rate | 100% |
+| Observed throughput | 1,073.24 req/sec |
+| Average latency | 4.598 ms |
+| P50 latency | 3.888 ms |
+| P95 latency | 9.149 ms |
+| P99 latency | 16.880 ms |
 
-The dependency audit is scoped to production dependencies. It does not replace full development dependency, container, infrastructure, or runtime security assessments.
+### Additional verification
+
+| Test | Result |
+|---|---|
+| Sequential follow-up | 500/500 HTTP 200 |
+| Follow-up average latency | 0.954 ms |
+| Separate 30-second test | 1,651 successful / 1,681 requests |
+| Failures in 30-second test | 30 |
+
+### Interpretation
+
+The 2,500-request test achieved 100% success in that particular short burst.
+
+A separate 30-second benchmark recorded 30 failures: 6 timeouts and 24 `URLError` events. The cause was not established.
+
+These are local, synthetic observations, not production SLA measurements or sustained capacity guarantees.
+
+---
 
 ## Monitoring and Troubleshooting
 
@@ -164,75 +179,127 @@ The dependency audit is scoped to production dependencies. It does not replace f
 curl http://YOUR_PUBLIC_IP/health
 ```
 
-### AWS Systems Manager
+### Connect through AWS Systems Manager
 
-Use Session Manager to connect to the managed instance without opening SSH access.
+```bash
+aws ssm start-session \
+  --target YOUR_INSTANCE_ID \
+  --region YOUR_REGION
+```
 
-### CloudWatch Logs
+### Useful operational checks
 
-Log group:
+```bash
+sudo docker ps
+sudo docker stats --no-stream
+sudo docker logs --tail 100 cloud-operations-platform
+```
+
+CloudWatch log group:
 
 `/cloud-operations-platform/app`
 
-Review application startup messages and runtime logs in CloudWatch Logs.
+These checks help investigate container health, application logs, runtime resources, and deployment issues.
 
-### Common checks
+---
 
-- EC2 status checks
-- SSM managed instance status
-- EC2 security group rules
-- ECR image availability
-- Container status and logs
-- CloudWatch log stream
-- Application health endpoint
+## Security and Reliability Considerations
 
-## Security Considerations
+Security controls and operational practices used in the project include:
 
-This is a portfolio and learning project, not a production-ready reference architecture.
+- IAM role-based instance access.
+- Systems Manager administration.
+- IMDSv2 requirement.
+- Non-root application container.
+- Digest-pinned deployment image.
+- Isolated candidate validation.
+- Automated dependency auditing.
+- Automated Docker runtime health checks.
 
-Current considerations:
-- The demo application is reachable over HTTP; HTTPS/TLS is not configured.
-- HTTP access is publicly exposed through the security group.
-- Review security group egress and IAM permissions before production use.
-- Protect AWS credentials and GitHub tokens.
-- Avoid committing `.env` files, Terraform state, credentials, or other secrets.
-- Review dependency and image scan results regularly.
-- Apply least-privilege IAM policies.
-- Consider a managed HTTPS entry point, restricted network access, and stronger deployment controls for a production design.
+### Known limitations
 
-## Cost Awareness
+This is a portfolio learning project, not a production-ready reference architecture.
 
-AWS resources may incur charges, including EC2 compute, EBS storage, ECR storage, CloudWatch ingestion/storage, and public IPv4 usage.
+- Public HTTP exposure is configured; HTTPS/TLS is not configured.
+- End-to-end GitHub Actions delivery to AWS is not implemented.
+- AWS Organizations Service Control Policy restrictions blocked the required IAM OIDC inspection operations.
+- A production deployment script with rollback logic exists, but end-to-end production rollback and recovery have not been fully verified.
+- The deployment-state helper is separate from the production deployment workflow and is not an integrated transaction journal.
+- The timed benchmark's intermittent failures remain unexplained.
+- Performance tests do not establish production capacity or reliability.
 
-Check AWS Billing and Cost Management and review all deployed resources before leaving the project running.
+---
 
-## Cleanup
+## Project Structure
 
-Terraform manages infrastructure lifecycle, but this configuration includes resource protection such as `prevent_destroy`.
+```text
+.
+├── .github/
+│   └── workflows/
+│       ├── test.yml
+│       ├── dependencyScan.yml
+│       └── docker-runtime.yml
+├── app/
+├── scripts/
+├── terraform/
+├── tests/
+├── app.js
+├── Dockerfile
+├── docker-compose.yml
+├── package.json
+├── package-lock.json
+├── .dockerignore
+└── readme.md
+```
 
-Before cleanup:
-1. Review Terraform state and resource dependencies.
-2. Review the destruction plan.
-3. Identify resources that may be retained or billed separately.
-4. Confirm the consequences before removing protection or deleting resources.
+---
 
-Never remove protection or destroy resources without reviewing the impact.
+## Run Locally
+
+### Prerequisites
+
+- Node.js
+- npm
+- Docker
+
+### Build and run
+
+```bash
+docker build -t cloud-operations-platform .
+docker run --rm -p 3000:3000 cloud-operations-platform
+```
+
+Verify:
+
+```bash
+curl http://localhost:3000/health
+```
+
+### Run automated tests
+
+```bash
+npm ci
+npm test
+```
+
+---
+
+## AWS Cost Awareness
+
+Resources such as EC2, EBS, ECR, CloudWatch, and public IPv4 addresses may incur charges.
+
+Review AWS Billing and Cost Management and identify deployed resources before leaving the environment running.
+
+Review Terraform state, resource protection, and deletion dependencies before performing cleanup.
+
+---
 
 ## Skills Demonstrated
 
-- AWS infrastructure operations
-- Terraform infrastructure as code
-- Docker image building and deployment
-- Amazon ECR
-- EC2 administration
-- IAM roles and permissions
-- AWS Systems Manager
-- CloudWatch monitoring and logs
-- CI automation
-- Dependency auditing
-- Linux troubleshooting
-- Application health checks
+AWS Cloud Engineering · Cloud Operations · Infrastructure as Code · Terraform · Docker · Amazon EC2 · Amazon ECR · IAM · AWS Systems Manager · CloudWatch · GitHub Actions · CI Automation · Linux Administration · Application Monitoring · Troubleshooting · Release Validation · Performance Testing
+
+---
 
 ## Repository
 
-GitHub: https://github.com/PaVAnKuMaR-18o3/aws-cloud-operations-platform
+**GitHub:** [PaVAnKuMaR-18o3/aws-cloud-operations-platform](https://github.com/PaVAnKuMaR-18o3/aws-cloud-operations-platform)

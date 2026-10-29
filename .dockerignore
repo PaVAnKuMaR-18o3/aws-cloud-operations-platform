@@ -7,6 +7,7 @@ docker-compose.yml
 
 .git
 .gitignore
+.github
 
 # Environment files and secrets
 .env
@@ -14,8 +15,11 @@ docker-compose.yml
 !.env.example
 .aws
 **/credentials
+*.pem
+*.key
 
 # Terraform local files
+/terraform/
 **/.terraform/
 *.tfstate
 *.tfstate.*
@@ -25,7 +29,7 @@ tfplan-*
 crash.log
 crash.*.log
 
-# Local backups
+# Local backups and review artifacts
 *.tf.bak
 *.tf.pre-*
 *.before-audit-fix
