@@ -134,7 +134,6 @@ jobs:
           echo "Published release tags:"
           printf '%s\n' "$IMAGE_TAGS"
 
-
       - name: Capture published image digest
         id: published
         env:
@@ -162,3 +161,23 @@ jobs:
 
           echo "Published image digest: $DIGEST"
           echo "Immutable image reference: $IMMUTABLE_REF"
+
+      - name: Write release summary
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_DIGEST: ${{ steps.published.outputs.digest }}
+          RELEASE_IMAGE_REF: ${{ steps.published.outputs.image_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## Container Release"
+            echo
+            echo "- **Version:** \`${RELEASE_VERSION}\`"
+            echo "- **Commit:** \`${RELEASE_COMMIT}\`"
+            echo "- **Image digest:** \`${RELEASE_DIGEST}\`"
+            echo "- **Immutable image:** \`${RELEASE_IMAGE_REF}\`"
+            echo
+            echo "This release image passed the candidate container health check."
+          } >> "$GITHUB_STEP_SUMMARY"
