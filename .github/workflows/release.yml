@@ -86,14 +86,14 @@ jobs:
               --max-time 2 \
               "http://127.0.0.1:${PORT}/health"; then
               echo
-              echo "Release health check PASSED."
+              echo "Release candidate health check PASSED."
               exit 0
             fi
 
             sleep 2
           done
 
-          echo "Release health check timed out."
+          echo "Release candidate health check timed out."
           exit 1
 
       - name: Record candidate image ID
@@ -162,6 +162,84 @@ jobs:
           echo "Published image digest: $DIGEST"
           echo "Immutable image reference: $IMMUTABLE_REF"
 
+      - name: Verify published image by digest
+        id: verify_published
+        env:
+          IMMUTABLE_IMAGE: ${{ steps.published.outputs.image_ref }}
+          EXPECTED_DIGEST: ${{ steps.published.outputs.digest }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          CONTAINER="cop-published-${GITHUB_RUN_ID}"
+          PORT=13002
+
+          cleanup() {
+            docker logs "$CONTAINER" 2>&1 || true
+            docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          [[ "$IMMUTABLE_IMAGE" == *"@${EXPECTED_DIGEST}" ]] || {
+            echo "Immutable reference and expected digest do not match."
+            exit 1
+          }
+
+          echo "Pulling immutable release: $IMMUTABLE_IMAGE"
+          docker pull "$IMMUTABLE_IMAGE"
+
+          docker run -d \
+            --name "$CONTAINER" \
+            -p "127.0.0.1:${PORT}:3000" \
+            "$IMMUTABLE_IMAGE"
+
+          ACTUAL_IMAGE_ID="$(docker inspect "$CONTAINER" --format '{{.Image}}')"
+          PULLED_IMAGE_ID="$(docker image inspect "$IMMUTABLE_IMAGE" --format '{{.Id}}')"
+
+          [[ "$ACTUAL_IMAGE_ID" == "$PULLED_IMAGE_ID" ]] || {
+            echo "Container image identity verification failed."
+            exit 1
+          }
+
+          for attempt in $(seq 1 30); do
+            if ! docker inspect -f '{{.State.Running}}' \
+              "$CONTAINER" 2>/dev/null | grep -qx true; then
+              echo "Published container stopped unexpectedly."
+              exit 1
+            fi
+
+            RESPONSE="$(curl --fail --silent \
+              --max-time 2 \
+              "http://127.0.0.1:${PORT}/health" || true)"
+
+            if [[ -n "$RESPONSE" ]] &&
+              node -e '
+                let input = "";
+                process.stdin.on("data", d => input += d);
+                process.stdin.on("end", () => {
+                  try {
+                    const body = JSON.parse(input);
+                    if (body.status !== "healthy" ||
+                        body.service !== "cloud-operations-platform") {
+                      process.exit(1);
+                    }
+                  } catch {
+                    process.exit(1);
+                  }
+                });
+              ' <<< "$RESPONSE"; then
+              echo "Published immutable image verification PASSED."
+              echo "Verified container image ID: $ACTUAL_IMAGE_ID"
+              echo "Verified release digest: $EXPECTED_DIGEST"
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "Published image health verification timed out."
+          exit 1
+
       - name: Write release summary
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
@@ -179,5 +257,5 @@ jobs:
             echo "- **Image digest:** \`${RELEASE_DIGEST}\`"
             echo "- **Immutable image:** \`${RELEASE_IMAGE_REF}\`"
             echo
-            echo "This release image passed the candidate container health check."
+            echo "The candidate passed its health check, and the published immutable image passed post-publication verification."
           } >> "$GITHUB_STEP_SUMMARY"
