@@ -9,6 +9,10 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Validate and Publish Release Image
@@ -129,3 +133,32 @@ jobs:
           echo "Validated image ID: $EXPECTED_IMAGE_ID"
           echo "Published release tags:"
           printf '%s\n' "$IMAGE_TAGS"
+
+
+      - name: Capture published image digest
+        id: published
+        env:
+          RELEASE_IMAGE: ghcr.io/pavankumar-18o3/aws-cloud-operations-platform
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          IMAGE_REF="${RELEASE_IMAGE}:${RELEASE_TAG}"
+
+          DIGEST="$(docker buildx imagetools inspect \
+            "$IMAGE_REF" \
+            --format '{{.Manifest.Digest}}')"
+
+          if [[ ! "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "Invalid registry digest: $DIGEST"
+            exit 1
+          fi
+
+          IMMUTABLE_REF="${RELEASE_IMAGE}@${DIGEST}"
+
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "image_ref=$IMMUTABLE_REF" >> "$GITHUB_OUTPUT"
+
+          echo "Published image digest: $DIGEST"
+          echo "Immutable image reference: $IMMUTABLE_REF"
