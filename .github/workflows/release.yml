@@ -5,11 +5,14 @@ on:
     tags:
       - 'v*'
 
+
 permissions:
   contents: read
   packages: write
   id-token: write
   attestations: write
+  artifact-metadata: write
+
 
 concurrency:
   group: release-${{ github.ref }}
@@ -281,6 +284,15 @@ jobs:
           echo "Published image health verification timed out."
           exit 1
 
+      - name: Generate signed image provenance
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/pavankumar-18o3/aws-cloud-operations-platform
+          subject-digest: ${{ steps.published.outputs.digest }}
+          push-to-registry: true
+
+
       - name: Publish and verify release aliases
         env:
           IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
@@ -322,13 +334,6 @@ jobs:
 
           echo "All release aliases verified."
 
-      - name: Generate signed image provenance
-        id: attest
-        uses: actions/attest@v4
-        with:
-          subject-name: ghcr.io/pavankumar-18o3/aws-cloud-operations-platform
-          subject-digest: ${{ steps.published.outputs.digest }}
-          push-to-registry: true
 
       - name: Write release summary
         env:
