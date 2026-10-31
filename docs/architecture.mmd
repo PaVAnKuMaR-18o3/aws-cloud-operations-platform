@@ -1,0 +1,12 @@
+flowchart LR
+    Dev[Developer] --> Repo[GitHub repository]
+    Repo --> CI[GitHub Actions\nTests · dependency check · Docker validation]
+    Dev --> TF[Terraform]
+    TF --> EC2[AWS EC2 instance]
+    App[Node.js application] -. container image .-> ECR[Amazon ECR]
+    ECR --> EC2
+    EC2 --> CW[Amazon CloudWatch]
+    Operator[Operator] --> SSM[AWS Systems Manager]
+    SSM --> EC2
+    User[Client] -->|HTTP| EC2
+    EC2 -->|/ and /health| User
