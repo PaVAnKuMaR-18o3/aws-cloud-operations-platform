@@ -14,8 +14,9 @@ permissions:
   artifact-metadata: write
 
 
+# Serialize release publishers so separate tag runs cannot race on shared aliases.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-publish
   cancel-in-progress: false
 
 jobs:
@@ -60,6 +61,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/pavankumar-18o3/aws-cloud-operations-platform
+          # Publish only immutable per-release aliases.
+          # Do not generate the moving "latest" alias from this workflow.
+          flavor: |
+            latest=false
           tags: |
             type=ref,event=tag
             type=sha,format=short

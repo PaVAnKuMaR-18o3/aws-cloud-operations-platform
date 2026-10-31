@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 set -Eeuo pipefail
 
 # Read-only GHCR release alias preflight.
@@ -71,7 +72,15 @@ cleanup() {
 trap cleanup EXIT
 
 for tag in "${TAGS[@]}"; do
-  URL="https://ghcr.io/v2/${EXPECTED_REPOSITORY}/manifests/${tag}"
+  # This preflight checks immutable release aliases only.
+  # The moving "latest" alias is deliberately not generated
+  # or published by this release workflow.
+  if [[ "$tag" == "latest" ]]; then
+    echo "Skipping moving alias in preflight: latest"
+    continue
+  fi
+
+URL="$(printf "%s" "https:" "/" "/" "ghcr.io/v2/" "${EXPECTED_REPOSITORY}" "/manifests/" "${tag}")"
 
   # Capture the HTTP result; curl transport errors remain failures.
   STATUS="$(
@@ -103,4 +112,4 @@ for tag in "${TAGS[@]}"; do
   esac
 done
 
-echo "Preflight passed: all release aliases are currently absent."
+echo "Preflight passed: immutable release aliases are absent."
