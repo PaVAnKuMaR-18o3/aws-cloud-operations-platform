@@ -8,6 +8,8 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
+  attestations: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -20,6 +22,21 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Validate release version
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ ! "$RELEASE_VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Invalid stable release version: $RELEASE_VERSION"
+            echo "Expected: vMAJOR.MINOR.PATCH without leading zeroes."
+            exit 1
+          fi
+
+          echo "Release version accepted: $RELEASE_VERSION"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -43,6 +60,13 @@ jobs:
           tags: |
             type=ref,event=tag
             type=sha,format=short
+
+      - name: Preflight GHCR release aliases
+        env:
+          RELEASE_IMAGE: ghcr.io/pavankumar-18o3/aws-cloud-operations-platform
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        shell: bash
+        run: bash scripts/check-ghcr-release-aliases.sh
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -112,61 +136,66 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Tag and publish validated image
-        env:
-          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
-          EXPECTED_IMAGE_ID: ${{ steps.image.outputs.id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          while IFS= read -r tag; do
-            [[ -n "$tag" ]] || continue
-            docker tag cop-release:candidate "$tag"
-          done <<< "$IMAGE_TAGS"
-
-          while IFS= read -r tag; do
-            [[ -n "$tag" ]] || continue
-            docker push "$tag"
-          done <<< "$IMAGE_TAGS"
-
-          echo "Validated image ID: $EXPECTED_IMAGE_ID"
-          echo "Published release tags:"
-          printf '%s\n' "$IMAGE_TAGS"
-
-      - name: Capture published image digest
+      - name: Publish validated image and capture digest
         id: published
         env:
           RELEASE_IMAGE: ghcr.io/pavankumar-18o3/aws-cloud-operations-platform
-          RELEASE_TAG: ${{ github.ref_name }}
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          EXPECTED_IMAGE_ID: ${{ steps.image.outputs.id }}
+          RUN_TAG: ci-${{ github.run_id }}-${{ github.run_attempt }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
-          IMAGE_REF="${RELEASE_IMAGE}:${RELEASE_TAG}"
+          UNIQUE_REF="${RELEASE_IMAGE}:${RUN_TAG}"
 
-          DIGEST="$(docker buildx imagetools inspect \
-            "$IMAGE_REF" \
-            --format '{{.Manifest.Digest}}')"
+          # Publish the exact local candidate under a run-specific tag.
+          docker tag cop-release:candidate "$UNIQUE_REF"
+
+          PUSH_LOG="$(mktemp)"
+          trap 'rm -f "$PUSH_LOG"' EXIT
+
+          docker push "$UNIQUE_REF" 2>&1 | tee "$PUSH_LOG"
+
+          DIGEST="$(sed -nE \
+            's/.*digest: (sha256:[a-f0-9]{64}).*/\1/p' \
+            "$PUSH_LOG" | tail -n 1)"
 
           if [[ ! "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-            echo "Invalid registry digest: $DIGEST"
+            echo "Could not capture a valid push digest."
             exit 1
           fi
 
           IMMUTABLE_REF="${RELEASE_IMAGE}@${DIGEST}"
 
+          # Confirm the registry artifact matches the candidate.
+          docker pull "$IMMUTABLE_REF"
+
+          PULLED_IMAGE_ID="$(docker image inspect \
+            "$IMMUTABLE_REF" --format '{{.Id}}')"
+
+          if [[ "$PULLED_IMAGE_ID" != "$EXPECTED_IMAGE_ID" ]]; then
+            echo "Published image does not match tested candidate."
+            echo "Expected: $EXPECTED_IMAGE_ID"
+            echo "Actual:   $PULLED_IMAGE_ID"
+            exit 1
+          fi
+
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
           echo "image_ref=$IMMUTABLE_REF" >> "$GITHUB_OUTPUT"
 
-          echo "Published image digest: $DIGEST"
-          echo "Immutable image reference: $IMMUTABLE_REF"
+          echo "Verified candidate image ID: $PULLED_IMAGE_ID"
+          echo "Published digest: $DIGEST"
+          echo "Immutable reference: $IMMUTABLE_REF"
+          echo "Published aliases:"
+          printf '%s\n' "$IMAGE_TAGS"
 
       - name: Verify published image by digest
         id: verify_published
         env:
           IMMUTABLE_IMAGE: ${{ steps.published.outputs.image_ref }}
           EXPECTED_DIGEST: ${{ steps.published.outputs.digest }}
+          EXPECTED_IMAGE_ID: ${{ steps.image.outputs.id }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -187,6 +216,18 @@ jobs:
 
           echo "Pulling immutable release: $IMMUTABLE_IMAGE"
           docker pull "$IMMUTABLE_IMAGE"
+
+          PULLED_IMAGE_ID="$(docker image inspect \
+            "$IMMUTABLE_IMAGE" --format '{{.Id}}')"
+
+          if [[ "$PULLED_IMAGE_ID" != "$EXPECTED_IMAGE_ID" ]]; then
+            echo "Published image does not match tested candidate."
+            echo "Expected: $EXPECTED_IMAGE_ID"
+            echo "Actual:   $PULLED_IMAGE_ID"
+            exit 1
+          fi
+
+          echo "Published image matches tested candidate."
 
           docker run -d \
             --name "$CONTAINER" \
@@ -239,6 +280,55 @@ jobs:
 
           echo "Published image health verification timed out."
           exit 1
+
+      - name: Publish and verify release aliases
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          IMMUTABLE_IMAGE: ${{ steps.published.outputs.image_ref }}
+          EXPECTED_DIGEST: ${{ steps.published.outputs.digest }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          [[ "$IMMUTABLE_IMAGE" == *"@${EXPECTED_DIGEST}" ]] || {
+            echo "Immutable image reference does not match expected digest."
+            exit 1
+          }
+
+          # Reached only after immutable image health verification succeeds.
+          docker pull "$IMMUTABLE_IMAGE"
+
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+
+            echo "Publishing alias: $tag"
+            docker tag "$IMMUTABLE_IMAGE" "$tag"
+            docker push "$tag"
+
+            INSPECT_OUTPUT="$(docker buildx imagetools inspect "$tag")"
+            ACTUAL_DIGEST="$(printf '%s\n' "$INSPECT_OUTPUT" |
+              sed -nE 's/^Digest:[[:space:]]*(sha256:[a-f0-9]{64})$/\1/p' |
+              head -n 1)"
+
+            if [[ "$ACTUAL_DIGEST" != "$EXPECTED_DIGEST" ]]; then
+              echo "Alias digest verification failed: $tag"
+              echo "Expected: $EXPECTED_DIGEST"
+              echo "Actual:   ${ACTUAL_DIGEST:-unavailable}"
+              exit 1
+            fi
+
+            echo "Verified alias digest: $tag -> $ACTUAL_DIGEST"
+          done <<< "$IMAGE_TAGS"
+
+          echo "All release aliases verified."
+
+      - name: Generate signed image provenance
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/pavankumar-18o3/aws-cloud-operations-platform
+          subject-digest: ${{ steps.published.outputs.digest }}
+          push-to-registry: true
 
       - name: Write release summary
         env:

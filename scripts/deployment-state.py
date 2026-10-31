@@ -67,7 +67,7 @@ def write_atomic(path, data):
         if os.path.exists(tmp):
             os.unlink(tmp)
 
-def main():
+def _main_unlocked():
     p = argparse.ArgumentParser()
     p.add_argument("action", choices=["init", "stage", "show", "verify-rollback"])
     p.add_argument("--file", required=True)
@@ -225,6 +225,35 @@ def main():
 
     write_atomic(path, state)
     print(f"State updated: {args.value}")
+
+
+def main():
+    import fcntl
+
+    # Preserve the original CLI help behavior.
+    if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
+        _main_unlocked()
+        return
+
+    # Resolve one consistent lock path per state file.
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--file")
+    args, _ = parser.parse_known_args()
+
+    # Let the original parser report missing --file and other
+    # argument errors without creating directories or lock files.
+    if not args.file:
+        _main_unlocked()
+        return
+
+    state_path = Path(args.file).resolve()
+    lock_path = Path(str(state_path) + ".lock")
+
+    # The parent must already exist. Never create it implicitly.
+    # Never lock the state JSON itself: os.replace() swaps its inode.
+    with lock_path.open("a") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        _main_unlocked()
 
 if __name__ == "__main__":
     main()

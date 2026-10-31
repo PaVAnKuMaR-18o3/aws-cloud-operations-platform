@@ -1,5 +1,7 @@
 
 import hashlib
+import concurrent.futures
+import threading
 import json
 import subprocess
 import sys
@@ -159,6 +161,114 @@ class DeploymentStateTests(unittest.TestCase):
         self.assertEqual(
             self.read_state()["stage"], "ROLLBACK_REQUIRED"
         )
+
+
+    def test_concurrent_initialization_preserves_valid_state(self):
+        barrier = threading.Barrier(2)
+
+        def initialize(deployment_id):
+            barrier.wait(timeout=10)
+            return subprocess.run(
+                [
+                    sys.executable, str(SCRIPT),
+                    "init",
+                    "--file", str(self.state),
+                    "--deployment-id", deployment_id,
+                    "--old-image", OLD_IMAGE,
+                    "--target-image", TARGET_IMAGE,
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=2
+        ) as executor:
+            futures = [
+                executor.submit(initialize, "deploy-race-a"),
+                executor.submit(initialize, "deploy-race-b"),
+            ]
+            results = [
+                future.result(timeout=30)
+                for future in futures
+            ]
+
+        successes = [
+            result for result in results
+            if result.returncode == 0
+        ]
+        failures = [
+            result for result in results
+            if result.returncode != 0
+        ]
+
+        self.assertEqual(
+            len(successes), 1,
+            [result.stderr for result in results],
+        )
+        self.assertEqual(len(failures), 1)
+
+        state = self.read_state()
+        self.assertIn(
+            state["deployment_id"],
+            {"deploy-race-a", "deploy-race-b"},
+        )
+        self.assertEqual(state["stage"], "PREPARED")
+        self.assertEqual(state["previous_image"], OLD_IMAGE)
+        self.assertEqual(state["target_image"], TARGET_IMAGE)
+
+
+    def test_concurrent_transitions_do_not_overwrite_each_other(self):
+        self.assertEqual(self.init_state().returncode, 0)
+
+        barrier = threading.Barrier(2)
+
+        def transition(stage):
+            barrier.wait(timeout=10)
+            return subprocess.run(
+                [
+                    sys.executable, str(SCRIPT),
+                    "stage",
+                    "--file", str(self.state),
+                    "--value", stage,
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=2
+        ) as executor:
+            futures = [
+                executor.submit(transition, "CUTOVER"),
+                executor.submit(transition, "CUTOVER"),
+            ]
+            results = [
+                future.result(timeout=30)
+                for future in futures
+            ]
+
+        successes = [
+            result for result in results
+            if result.returncode == 0
+        ]
+        failures = [
+            result for result in results
+            if result.returncode != 0
+        ]
+
+        self.assertEqual(
+            len(successes), 1,
+            [result.stderr for result in results],
+        )
+        self.assertEqual(len(failures), 1)
+
+        state = self.read_state()
+        self.assertIn(
+            state["stage"],
+            {"CUTOVER", "MANUAL_RECOVERY_REQUIRED"},
+        )
+        self.assertEqual(state["deployment_id"], "test-deploy-001")
 
 
 if __name__ == "__main__":
